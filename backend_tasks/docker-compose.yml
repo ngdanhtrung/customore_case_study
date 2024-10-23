@@ -1,0 +1,85 @@
+version: "3.0"
+
+services:
+  postgres:
+    image: delivery-postgres
+    container_name: delivery-postgres
+    build:
+      context: ./init/postgres
+      dockerfile: Dockerfile
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Abc123456!
+      - POSTGRES_DB=delivery_db
+    volumes:
+      - ./data/postgres-data:/var/lib/postgresql/data
+
+  object-storage:
+    image: delivery-object-storage
+    container_name: delivery-object-storage
+    command: 'server -dir="/data" -s3 -s3.config="/configs/storage.configs.json"'
+    build:
+      context: ./init/seaweedfs
+      dockerfile: Dockerfile
+    ports:
+      - 8333:8333
+      - 8888:8888
+      - 8080:8080
+      - 9333:9333
+    volumes:
+      - ./data/seaweedfs-data/data:/data
+      - ./data/seaweedfs-data/buckets:/buckets
+      - ./init/seaweedfs/storage.configs.json:/configs/storage.configs.json
+
+  redis:
+    image: delivery-redis
+    container_name: delivery-redis
+    build:
+      context: ./init/redis
+      dockerfile: Dockerfile
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis-data:/data
+
+  delivery-server:
+    image: delivery-server:1.0.0
+    container_name: delivery-server
+    build:
+      context: ./delivery-server
+      dockerfile: Dockerfile
+    ports:
+      - 8000:8000
+    entrypoint:
+      - "/venv/bin/gunicorn"
+      - "-b"
+      - "0.0.0.0:8000"
+      - "delivery.wsgi"
+      - "--reload"
+    environment:
+      - POSTGRES_HOST=delivery-postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=delivery_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Abc123456!
+    volumes:
+      - ./delivery-server:/app
+    depends_on:
+      - postgres
+      - object-storage
+
+  # nginx:
+  #   image: nginx:1.0.0
+  #   restart: always
+  #   container_name: nginx
+  #   build:
+  #     context: ./init/nginx
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - 3000:3000
+  #     - 80:80
+  #   volumes:
+  #     - ./nginx/nginx/nginx-logrotate.conf:/etc/logrotate.d/nginx
+  #     - ./nginx/nginx/log:/var/log/nginx
